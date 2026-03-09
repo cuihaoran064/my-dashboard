@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>工作生活看板</title>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --bg: #F2F2F7; --card: #FFFFFF; --blue: #007AFF; --green: #34C759; --text: #1C1C1E; --gray: #8E8E93; --border: #E5E5EA; }
+        body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; padding: 15px; margin: 0; }
+        .container { max-width: 900px; margin: 0 auto; display: block; } /* 确保可见 */
+        .tabs { display: flex; background: #E3E3E8; border-radius: 10px; padding: 2px; margin-bottom: 10px; }
+        .tab-btn { flex: 1; border: none; padding: 10px; border-radius: 8px; font-size: 14px; cursor: pointer; background: none; }
+        .tab-btn.active { background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-weight: 600; }
+        .date-nav { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+        .nav-arrow { cursor: pointer; color: var(--blue); display: flex; align-items: center; padding: 5px; }
+        #current-date-label { font-size: 15px; font-weight: 600; min-width: 150px; text-align: center; }
+        .card { background: var(--card); border-radius: 18px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 15px rgba(0,0,0,0.03); border: 1px solid var(--border); }
+        .header { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-size: 18px; font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        .todo-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F9F9FB; }
+        input[type="text"], textarea { border: none; outline: none; width: 100%; font-size: 15px; background: transparent; }
+        textarea { background: #F9F9FB; border-radius: 10px; padding: 12px; height: 100px; resize: none; width: calc(100% - 24px); border: 1px solid var(--border); }
+        .check-icon { cursor: pointer; color: var(--border); }
+        .check-icon.done { color: var(--blue); }
+        .title-sm { color: var(--gray); font-size: 12px; margin-bottom: 10px; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="main-content">
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchFrame('day')">日报</button>
+        <button class="tab-btn" onclick="switchFrame('week')">周报</button>
+        <button class="tab-btn" onclick="switchFrame('year')">年报</button>
+    </div>
+
+    <div class="date-nav">
+        <div class="nav-arrow" onclick="changeDate(-1)"><i data-feather="chevron-left"></i></div>
+        <div id="current-date-label">正在初始化...</div>
+        <div class="nav-arrow" onclick="changeDate(1)"><i data-feather="chevron-right"></i></div>
+    </div>
+
+    <div class="card">
+        <div class="header" style="color:var(--blue)"><i data-feather="briefcase"></i> 工作 WORK</div>
+        <div class="grid">
+            <div>
+                <div class="title-sm">待办清单</div>
+                <div id="work-todos"></div>
+                <div class="todo-item"><i data-feather="plus" style="color:var(--gray)"></i><input id="work-input" type="text" placeholder="输入并回车..." onkeypress="if(event.key==='Enter') addTask('work', this.value)"></div>
+            </div>
+            <div>
+                <div class="title-sm">总结</div>
+                <textarea id="work-sum" onblur="updateSum('work', this.value)"></textarea>
+            </div>
+            <div style="height: 120px;"><canvas id="workChart"></canvas></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="header" style="color:var(--green)"><i data-feather="heart"></i> 生活 LIFE</div>
+        <div class="grid">
+            <div>
+                <div class="title-sm">记录</div>
+                <div id="life-todos"></div>
+                <div class="todo-item"><i data-feather="plus" style="color:var(--gray)"></i><input id="life-input" type="text" placeholder="输入并回车..." onkeypress="if(event.key==='Enter') addTask('life', this.value)"></div>
+            </div>
+            <div>
+                <div class="title-sm">总结</div>
+                <textarea id="life-sum" onblur="updateSum('life', this.value)"></textarea>
+            </div>
+            <div style="height: 120px;"><canvas id="lifeChart"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 配置 ---
+    const SB_URL = "https://jklxlcobtwtgddifcmlx.supabase.co";
+    const SB_KEY = "sb_publishable_bjEGqcp5cYThRF-fvqUceg_zyLVXIAY";
+
+    let supabaseClient;
+    let currentFrame = 'day';
+    let viewDate = new Date();
+
+    // 格式化日期 key
+    function getDateKey() {
+        const y = viewDate.getFullYear();
+        if (currentFrame === 'day') return `${y}-${viewDate.getMonth() + 1}-${viewDate.getDate()}`;
+        if (currentFrame === 'week') {
+            const start = new Date(y, 0, 1);
+            const weekNum = Math.ceil((((viewDate - start) / 86400000) + start.getDay() + 1) / 7);
+            return `${y}-W${weekNum}`;
+        }
+        return `${y}`;
+    }
+
+    function updateDisplayLabel() {
+        const label = document.getElementById('current-date-label');
+        const y = viewDate.getFullYear();
+        if (currentFrame === 'day') label.innerText = `${y}年${viewDate.getMonth() + 1}月${viewDate.getDate()}日`;
+        else if (currentFrame === 'week') {
+            const start = new Date(y, 0, 1);
+            const weekNum = Math.ceil((((viewDate - start) / 86400000) + start.getDay() + 1) / 7);
+            label.innerText = `${y}年 第 ${weekNum} 周`;
+        } else label.innerText = `${y} 年度记录`;
+    }
+
+    async function loadData() {
+        if(!supabaseClient) return;
+        try {
+            const tag = getDateKey();
+            const { data: todos } = await supabaseClient.from('todos').select('*').eq('time_frame', tag).order('created_at');
+            renderTodos(todos || []);
+            const { data: sums } = await supabaseClient.from('summaries').select('*').eq('time_frame', tag);
+            document.getElementById('work-sum').value = sums?.find(s => s.category === 'work')?.content || '';
+            document.getElementById('life-sum').value = sums?.find(s => s.category === 'life')?.content || '';
+        } catch (e) { console.error("数据加载失败", e); }
+    }
+
+    function renderTodos(list) {
+        ['work', 'life'].forEach(cat => {
+            document.getElementById(`${cat}-todos`).innerHTML = list.filter(t => t.category === cat).map(t => `
+                <div class="todo-item">
+                    <i data-feather="${t.is_completed ? 'check-circle' : 'circle'}" class="check-icon ${t.is_completed ? 'done' : ''}" onclick="toggleTodo('${t.id}', ${t.is_completed})"></i>
+                    <span style="${t.is_completed ? 'text-decoration:line-through;color:gray' : ''}">${t.content}</span>
+                </div>`).join('');
+        });
+        feather.replace();
+    }
+
+    async function addTask(cat, val) {
+        if(!val) return;
+        await supabaseClient.from('todos').insert([{ category: cat, content: val, time_frame: getDateKey() }]);
+        document.getElementById(cat + '-input').value = '';
+        loadData();
+    }
+
+    async function toggleTodo(id, status) {
+        await supabaseClient.from('todos').update({ is_completed: !status }).eq('id', id);
+        loadData();
+    }
+
+    async function updateSum(cat, val) {
+        await supabaseClient.from('summaries').upsert({ category: cat, content: val, time_frame: getDateKey() }, { onConflict: 'category,time_frame' });
+    }
+
+    function changeDate(step) {
+        if (currentFrame === 'day') viewDate.setDate(viewDate.getDate() + step);
+        else if (currentFrame === 'week') viewDate.setDate(viewDate.getDate() + step * 7);
+        else viewDate.setFullYear(viewDate.getFullYear() + step);
+        updateDisplayLabel();
+        loadData();
+    }
+
+    function switchFrame(f) {
+        currentFrame = f;
+        viewDate = new Date();
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.innerText.includes(f==='day'?'日':f==='week'?'周':'年')));
+        updateDisplayLabel();
+        loadData();
+    }
+
+    // 启动流程
+    window.onload = () => {
+        try {
+            // 1. 先初始化图标和图表（让页面看起来不白）
+            feather.replace();
+            updateDisplayLabel();
+            new Chart(document.getElementById('workChart'), { type: 'line', data: { labels: ['M','T','W','T','F','S','S'], datasets: [{ data: [1,2,3,4,5,6,7], borderColor: '#007AFF', tension: 0.3 }] }, options: { maintainAspectRatio: false, plugins: { legend: false } } });
+            new Chart(document.getElementById('lifeChart'), { type: 'doughnut', data: { datasets: [{ data: [50, 50], backgroundColor: ['#34C759', '#E5E5EA'] }] }, options: { maintainAspectRatio: false } });
+
+            // 2. 延迟连接数据库，防止阻塞
+            setTimeout(() => {
+                if (typeof supabase !== 'undefined') {
+                    supabaseClient = supabase.createClient(SB_URL, SB_KEY);
+                    loadData();
+                } else {
+                    alert("Supabase库未加载，请检查网络或刷新");
+                }
+            }, 500);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+</script>
+</body>
+</html>
