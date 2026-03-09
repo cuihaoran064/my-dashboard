@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>我的个人看板 Pro Max</title>
+    <title>我的数字化看板 Pro Max</title>
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -26,10 +26,10 @@
 
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
         .weekday { font-size: 10px; color: var(--gray); text-align: center; }
-        .day-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; font-size: 12px; cursor: pointer; background: #F9F9FB; transition: 0.2s; }
+        .day-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; font-size: 12px; cursor: pointer; background: #F9F9FB; transition: 0.2s; position: relative; }
         .day-cell.active { background: var(--orange); color: white; font-weight: bold; }
         .day-cell.today { border: 1.5px solid var(--blue); }
-        .remark-dot { width: 4px; height: 4px; background: white; border-radius: 50%; margin-top: 2px; opacity: 0.6; }
+        .remark-dot { width: 4px; height: 4px; background: white; border-radius: 50%; margin-top: 2px; opacity: 0.8; }
 
         .todo-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #F9F9FB; font-size: 14px; }
         input[type="text"], textarea { border: none; outline: none; width: 100%; font-size: 14px; background: transparent; }
@@ -57,21 +57,24 @@
         <div class="header">
             <div>
                 <select id="habit-select" class="orange-select" onchange="loadPage()"></select>
-                <span class="action-btn" onclick="deleteItem('habit')">删除</span>
+                <span class="action-btn" onclick="deleteItem('habit')">删除习惯</span>
             </div>
             <span id="cal-label" style="font-size:12px; color:var(--gray)"></span>
         </div>
         <div class="calendar-grid" id="calendar-body"></div>
-        <input type="text" placeholder="+ 新增打卡习惯..." onkeypress="if(event.key==='Enter') createItem('habit', this.value)" style="margin-top:10px; font-size:12px; color:var(--gray)">
+        <input type="text" placeholder="+ 新增打卡项目 (回车添加)" onkeypress="if(event.key==='Enter') createItem('habit', this.value)" style="margin-top:10px; font-size:12px; color:var(--gray)">
     </div>
 
     <div class="card">
         <div class="header">
             <div>
-                <select id="cat-select" onchange="loadPage()"></select>
+                <select id="cat-select" onchange="loadPage()">
+                    <option value="work">工作 WORK</option>
+                    <option value="life">生活 LIFE</option>
+                </select>
                 <span class="action-btn" onclick="deleteItem('cat')">删除分类</span>
             </div>
-            <span id="todo-title" style="font-size:12px; color:var(--gray)"></span>
+            <span id="todo-title" style="font-size:12px; color:var(--gray)">待办</span>
         </div>
         <div id="todo-list"></div>
         <div class="todo-item"><input type="text" id="todo-input" placeholder="+ 添加新任务..." onkeypress="if(event.key==='Enter') addTask(this.value)"></div>
@@ -80,17 +83,18 @@
 
     <div class="card">
         <div class="header" id="sum-title">今日总结</div>
-        <textarea id="sum-content" placeholder="点击输入内容..." onblur="saveContent('content', this.value)"></textarea>
+        <textarea id="sum-content" placeholder="记录心得..." onblur="saveContent('content', this.value)"></textarea>
     </div>
+
     <div class="card">
         <div class="header" id="plan-title">下阶段规划</div>
-        <textarea id="plan-content" placeholder="点击输入内容..." onblur="saveContent('remark', this.value)"></textarea>
+        <textarea id="plan-content" placeholder="规划未来..." onblur="saveContent('remark', this.value)"></textarea>
     </div>
 </div>
 
 <script>
-    const SB_URL = "你的Supabase地址";
-    const SB_KEY = "你的Supabase密钥"; 
+    const SB_URL = "https://jklxlcobtwtgddifcmlx.supabase.co";
+    const SB_KEY = "你的anon_key"; 
     const sb = supabase.createClient(SB_URL, SB_KEY);
 
     let currentFrame = 'day', viewDate = new Date();
@@ -102,53 +106,56 @@
     };
 
     async function loadPage() {
-        updateLabel();
         const tag = getTag();
+        updateLabel();
         
-        // 1. 获取所有习惯和分类
-        const { data: habits } = await sb.from('habit_definitions').select('*').order('created_at');
-        const { data: allCats } = await sb.from('summaries').select('category');
-        
-        // 更新下拉框
-        const habitSelect = document.getElementById('habit-select');
-        if (habitSelect.options.length === 0 && habits) {
-            habitSelect.innerHTML = habits.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
-        }
-        
-        const catSelect = document.getElementById('cat-select');
-        if (catSelect.options.length === 0) {
-            const uniqueCats = [...new Set(['work', 'life', ...(allCats?.map(c => c.category) || [])])];
-            catSelect.innerHTML = uniqueCats.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('');
-        }
+        try {
+            // 1. 获取基础配置
+            const { data: habits } = await sb.from('habit_definitions').select('*').order('created_at');
+            const { data: allCats } = await sb.from('summaries').select('category');
+            
+            // 渲染下拉框
+            const hSelect = document.getElementById('habit-select');
+            if (habits && habits.length > 0 && hSelect.options.length === 0) {
+                hSelect.innerHTML = habits.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+            }
+            
+            const cSelect = document.getElementById('cat-select');
+            if (cSelect.options.length <= 2) {
+                const uniqueCats = [...new Set(['work', 'life', ...(allCats?.filter(c => c.category !== 'system').map(c => c.category) || [])])];
+                cSelect.innerHTML = uniqueCats.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('');
+            }
 
-        const habitId = habitSelect.value;
-        const category = catSelect.value;
+            const habitId = hSelect.value;
+            const category = cSelect.value || 'work';
 
-        // 2. 加载核心数据
-        const [logs, todos, sums] = await Promise.all([
-            sb.from('habit_logs').select('*').eq('habit_id', habitId),
-            sb.from('todos').select('*').eq('time_frame', tag).eq('category', category).order('created_at'),
-            sb.from('summaries').select('*').eq('time_frame', tag).eq('category', category).single()
-        ]);
+            // 2. 加载数据 (使用 maybeSingle 避免因空数据报错)
+            const [logsRes, todosRes, sumsRes] = await Promise.all([
+                sb.from('habit_logs').select('*').eq('habit_id', habitId),
+                sb.from('todos').select('*').eq('time_frame', tag).eq('category', category).order('created_at'),
+                sb.from('summaries').select('*').eq('time_frame', tag).eq('category', category).maybeSingle()
+            ]);
 
-        renderCalendar(habitId, logs.data || []);
-        renderTodos(todos.data || []);
-        document.getElementById('sum-content').value = sums.data?.content || '';
-        document.getElementById('plan-content').value = sums.data?.remark || '';
-        
-        // 更新标题
-        document.getElementById('sum-title').innerText = titleMap[currentFrame].sum;
-        document.getElementById('plan-title').innerText = titleMap[currentFrame].plan;
-        document.getElementById('todo-title').innerText = titleMap[currentFrame].todo;
+            renderCalendar(habitId, logsRes.data || []);
+            renderTodos(todosRes.data || []);
+            document.getElementById('sum-content').value = sumsRes.data?.content || '';
+            document.getElementById('plan-content').value = sumsRes.data?.remark || '';
+            
+            // 更新标题
+            document.getElementById('sum-title').innerText = titleMap[currentFrame].sum;
+            document.getElementById('plan-title').innerText = titleMap[currentFrame].plan;
+            document.getElementById('todo-title').innerText = titleMap[currentFrame].todo;
+
+        } catch (e) { console.error("加载中断:", e); }
         feather.replace();
     }
 
     function renderCalendar(habitId, logs) {
         const body = document.getElementById('calendar-body');
-        const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+        const now = viewDate, y = now.getFullYear(), m = now.getMonth();
         document.getElementById('cal-label').innerText = `${y}.${m+1}`;
         const first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
-        const offset = (first === 0 ? 6 : first - 1);
+        const offset = first === 0 ? 6 : first - 1;
 
         let html = ['一','二','三','四','五','六','日'].map(w => `<div class="weekday">${w}</div>`).join('');
         for (let i = 0; i < offset; i++) html += '<div></div>';
@@ -167,7 +174,7 @@
         if(done) {
             const act = confirm(`备注: ${oldRemark || '无'}\n\n[确定] 修改备注\n[取消] 撤销打卡`);
             if(act) {
-                const n = prompt("新备注:", oldRemark);
+                const n = prompt("输入新备注:", oldRemark);
                 if(n !== null) await sb.from('habit_logs').update({ remark: n }).eq('habit_id', id).eq('log_date', date);
             } else {
                 await sb.from('habit_logs').delete().eq('habit_id', id).eq('log_date', date);
@@ -179,16 +186,8 @@
         loadPage();
     }
 
-    // --- 其他基础功能 ---
-    function getTag() {
-        const d = viewDate;
-        if (currentFrame === 'day') return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-        if (currentFrame === 'week') return `${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
-        if (currentFrame === 'month') return `${d.getFullYear()}-M${d.getMonth()+1}`;
-        return `${d.getFullYear()}-YEAR`;
-    }
-
     async function addTask(v) {
+        if(!v) return;
         await sb.from('todos').insert([{ category: document.getElementById('cat-select').value, content: v, time_frame: getTag() }]);
         document.getElementById('todo-input').value = ''; loadPage();
     }
@@ -200,10 +199,26 @@
         await sb.from('summaries').upsert(upsertData, { onConflict: 'time_frame,category' });
     }
 
+    function getTag() {
+        const d = viewDate;
+        if (currentFrame === 'day') return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+        if (currentFrame === 'week') return `${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
+        if (currentFrame === 'month') return `${d.getFullYear()}-M${d.getMonth()+1}`;
+        return `${d.getFullYear()}-YEAR`;
+    }
+
     async function createItem(type, val) {
         if(!val) return;
         if(type==='habit') await sb.from('habit_definitions').insert([{ name: val }]);
         else await sb.from('summaries').insert([{ category: val, content: '', time_frame: 'system' }]);
+        location.reload();
+    }
+
+    async function deleteItem(type) {
+        const id = type==='habit' ? document.getElementById('habit-select').value : document.getElementById('cat-select').value;
+        if(!confirm("确定删除吗？数据将无法恢复")) return;
+        if(type==='habit') await sb.from('habit_definitions').delete().eq('id', id);
+        else await sb.from('summaries').delete().eq('category', id);
         location.reload();
     }
 
@@ -223,8 +238,18 @@
         else viewDate.setFullYear(viewDate.getFullYear()+s);
         loadPage(); 
     }
-    function switchFrame(f) { currentFrame=f; loadPage(); }
-    function updateLabel() { document.getElementById('current-date-label').innerText = viewDate.toLocaleDateString(); }
+    function switchFrame(f) { 
+        currentFrame=f; 
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.innerText.includes(f==='day'?'日':f==='week'?'周':f==='month'?'月':'年')));
+        loadPage(); 
+    }
+    function updateLabel() { 
+        const d = viewDate;
+        if(currentFrame==='day') document.getElementById('current-date-label').innerText = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+        else if(currentFrame==='week') document.getElementById('current-date-label').innerText = `${d.getFullYear()}年 第${Math.ceil(d.getDate()/7)}周`;
+        else if(currentFrame==='month') document.getElementById('current-date-label').innerText = `${d.getFullYear()}年${d.getMonth()+1}月`;
+        else document.getElementById('current-date-label').innerText = `${d.getFullYear()}年度`;
+    }
 
     window.onload = loadPage;
 </script>
