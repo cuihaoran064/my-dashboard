@@ -14,7 +14,7 @@
         .tab-btn { flex: 1; border: none; padding: 8px; border-radius: 8px; font-size: 13px; cursor: pointer; background: none; }
         .tab-btn.active { background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-weight: 600; }
         .date-nav { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 15px; }
-        #current-date-label { font-size: 15px; font-weight: 700; text-align: center; min-width: 200px; }
+        #current-date-label { font-size: 14px; font-weight: 700; text-align: center; min-width: 220px; line-height: 1.2; }
         .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
         .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 8px; font-size: 14px; }
         select { border: none; background: #F2F2F7; padding: 5px 10px; border-radius: 8px; font-weight: 600; color: var(--blue); font-size: 14px; outline: none; appearance: none; }
@@ -43,7 +43,7 @@
 
     <div class="date-nav">
         <i data-feather="chevron-left" onclick="changeDate(-1)"></i>
-        <div id="current-date-label">加载中...</div>
+        <div id="current-date-label">同步中...</div>
         <i data-feather="chevron-right" onclick="changeDate(1)"></i>
     </div>
 
@@ -75,12 +75,12 @@
 
     <div class="card">
         <div class="header" id="sum-title" style="color:var(--green)">总结</div>
-        <textarea id="sum-content" onblur="saveData('content', this.value)"></textarea>
+        <textarea id="sum-content" placeholder="填写总结..." onblur="saveData('content', this.value)"></textarea>
     </div>
 
     <div class="card">
         <div class="header" id="plan-title" style="color:var(--orange)">规划</div>
-        <textarea id="plan-content" onblur="saveData('remark', this.value)"></textarea>
+        <textarea id="plan-content" placeholder="填写规划..." onblur="saveData('remark', this.value)"></textarea>
     </div>
 </div>
 
@@ -179,12 +179,20 @@
 
     async function toggleTodo(id, st) { await sb.from('todos').update({is_completed:!st}).eq('id',id); loadPage(); }
 
+    // 获取周数
+    function getWeekNumber(d) {
+        d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+        var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+
     function getTag() {
         const d = new Date(viewDate);
         if (currentFrame === 'day') return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
         if (currentFrame === 'week') {
-            const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1);
-            return `${d.getFullYear()}-W${d.getMonth()+1}-${d.getDate()}`;
+            const weekNum = getWeekNumber(d);
+            return `${d.getFullYear()}-W${weekNum}`;
         }
         if (currentFrame === 'month') return `${d.getFullYear()}-M${d.getMonth()+1}`;
         return `${d.getFullYear()}-Y`;
@@ -209,13 +217,14 @@
         let t = "";
         if(currentFrame==='day') t = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
         else if(currentFrame==='week') {
+            const weekNum = getWeekNumber(d);
             const day = d.getDay() || 7;
             const monday = new Date(d); monday.setDate(d.getDate() - day + 1);
             const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-            t = `${monday.getFullYear()}年 ${monday.getMonth()+1}/${monday.getDate()} - ${sunday.getMonth()+1}/${sunday.getDate()}`;
+            t = `${monday.getFullYear()}年 第${weekNum}周<br>${monday.getMonth()+1}/${monday.getDate()} - ${sunday.getMonth()+1}/${sunday.getDate()}`;
         } else if(currentFrame==='month') t = `${d.getFullYear()}年${d.getMonth()+1}月`;
-        else t = `${d.getFullYear()}年度总结`;
-        document.getElementById('current-date-label').innerText = t;
+        else t = `${d.getFullYear()}年度`;
+        document.getElementById('current-date-label').innerHTML = t;
         const titles = {day:["今日总结","明日规划","今日待办"], week:["本周总结","下周规划","本周重点"], month:["本月总结","下月规划","本月目标"], year:["年度总结","明年规划","年度计划"]};
         document.getElementById('sum-title').innerText = titles[currentFrame][0];
         document.getElementById('plan-title').innerText = titles[currentFrame][1];
