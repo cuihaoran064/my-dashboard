@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>全能工作生活看板</title>
+    <title>我的数字化看板</title>
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root { --bg: #F2F2F7; --card: #FFFFFF; --blue: #007AFF; --green: #34C759; --orange: #FF9500; --text: #1C1C1E; --gray: #8E8E93; --border: #E5E5EA; }
+        :root { --bg: #F2F2F7; --card: #FFFFFF; --blue: #007AFF; --green: #34C759; --orange: #FF9500; --red: #FF3B30; --text: #1C1C1E; --gray: #8E8E93; --border: #E5E5EA; }
         body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; padding: 15px; margin: 0; padding-bottom: 30px; }
         .container { max-width: 900px; margin: 0 auto; }
         .tabs { display: flex; background: #E3E3E8; border-radius: 10px; padding: 2px; margin-bottom: 15px; }
@@ -24,9 +24,11 @@
         .todo-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #F9F9FB; }
         input[type="text"], textarea { border: none; outline: none; width: 100%; font-size: 15px; background: transparent; }
         textarea { background: #F9F9FB; border-radius: 10px; padding: 12px; height: 80px; resize: none; width: calc(100% - 24px); border: 1px solid var(--border); }
-        .habit-box { background: #F9F9FB; border-radius: 12px; padding: 12px; border: 1px solid #E5E5EA; }
+        .habit-box { background: #F9F9FB; border-radius: 12px; padding: 12px; border: 1px solid #E5E5EA; position: relative; }
         .log-tag { font-size: 11px; background: #E5E5EA; color: #666; padding: 2px 8px; border-radius: 6px; margin-top: 5px; display: inline-block; margin-right: 5px; }
         .btn-check { background: var(--orange); color: white; border: none; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; float: right; }
+        .btn-del { position: absolute; top: 5px; right: 5px; color: var(--gray); cursor: pointer; display: none; }
+        .habit-box:hover .btn-del { display: block; }
     </style>
 </head>
 <body>
@@ -35,7 +37,6 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="switchFrame('day')">日报模式</button>
         <button class="tab-btn" onclick="switchFrame('week')">周报统计</button>
-        <button class="tab-btn" onclick="switchFrame('year')">年度概览</button>
     </div>
 
     <div class="date-nav">
@@ -45,11 +46,11 @@
     </div>
 
     <div class="card">
-        <div class="header" style="color:var(--orange)"><i data-feather="calendar"></i> 习惯打卡 HABITS</div>
+        <div class="header" style="color:var(--orange)"><i data-feather="calendar"></i> 每日习惯 (切换日期即可查看历史)</div>
         <div id="habit-list" class="habit-grid"></div>
         <div class="todo-item" style="margin-top:15px; border:1px dashed var(--border); border-radius:10px; padding:5px 10px;">
             <i data-feather="plus" style="color:var(--gray)"></i>
-            <input id="habit-input" type="text" placeholder="新建习惯 (如: 体重记录)" onkeypress="if(event.key==='Enter') createHabit(this.value)">
+            <input id="habit-input" type="text" placeholder="在这里添加习惯（如：体重记录），只需添加一次" onkeypress="if(event.key==='Enter') createHabit(this.value)">
         </div>
     </div>
 
@@ -57,7 +58,7 @@
         <div class="header" style="color:var(--blue)"><i data-feather="briefcase"></i> 工作 WORK</div>
         <div class="grid">
             <div><div id="work-todos"></div><div class="todo-item"><input id="work-input" type="text" placeholder="+ 新任务" onkeypress="if(event.key==='Enter') addTask('work', this.value)"></div></div>
-            <div><textarea id="work-sum" placeholder="今日工作心得..." onblur="updateSum('work', this.value)"></textarea></div>
+            <div><textarea id="work-sum" placeholder="总结..." onblur="updateSum('work', this.value)"></textarea></div>
             <div style="height: 120px;"><canvas id="workChart"></canvas></div>
         </div>
     </div>
@@ -66,7 +67,7 @@
         <div class="header" style="color:var(--green)"><i data-feather="heart"></i> 生活 LIFE</div>
         <div class="grid">
             <div><div id="life-todos"></div><div class="todo-item"><input id="life-input" type="text" placeholder="+ 新计划" onkeypress="if(event.key==='Enter') addTask('life', this.value)"></div></div>
-            <div><textarea id="life-sum" placeholder="今日心情记录..." onblur="updateSum('life', this.value)"></textarea></div>
+            <div><textarea id="life-sum" placeholder="心得..." onblur="updateSum('life', this.value)"></textarea></div>
             <div style="height: 120px;"><canvas id="lifeChart"></canvas></div>
         </div>
     </div>
@@ -80,29 +81,23 @@
     let currentFrame = 'day', viewDate = new Date(), workChart, lifeChart;
 
     function getTag(date = viewDate) {
-        const y = date.getFullYear(), m = date.getMonth()+1, d = date.getDate();
-        if (currentFrame === 'day') return `${y}-${m}-${d}`;
-        if (currentFrame === 'week') {
-            const start = new Date(y, 0, 1);
-            return `${y}-W${Math.ceil((((date - start) / 86400000) + start.getDay() + 1) / 7)}`;
-        }
-        return `${y}`;
+        return `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
     }
 
     async function loadAll() {
         const tag = getTag();
         updateLabel();
         
-        // 并行加载所有数据
         const [todoRes, sumRes, habitDef, habitLogs] = await Promise.all([
             sb.from('todos').select('*').eq('time_frame', tag).order('created_at'),
             sb.from('summaries').select('*').eq('time_frame', tag),
-            sb.from('habit_definitions').select('*'),
+            sb.from('habit_definitions').select('*').order('created_at'),
             sb.from('habit_logs').select('*').eq('log_date', tag)
         ]);
 
         renderTodos(todoRes.data || []);
         renderHabits(habitDef.data || [], habitLogs.data || []);
+        
         document.getElementById('work-sum').value = sumRes.data?.find(s => s.category === 'work')?.content || '';
         document.getElementById('life-sum').value = sumRes.data?.find(s => s.category === 'life')?.content || '';
         
@@ -110,29 +105,28 @@
         feather.replace();
     }
 
-    function renderTodos(list) {
-        ['work', 'life'].forEach(cat => {
-            document.getElementById(`${cat}-todos`).innerHTML = list.filter(t => t.category === cat).map(t => `
-                <div class="todo-item">
-                    <i data-feather="${t.is_completed ? 'check-circle' : 'circle'}" class="${t.is_completed ? 'done' : ''}" style="cursor:pointer; color:${t.is_completed ? 'var(--blue)' : 'var(--border)'}" onclick="toggleTodo('${t.id}', ${t.is_completed})"></i>
-                    <span style="${t.is_completed ? 'text-decoration:line-through;color:gray' : ''}">${t.content}</span>
-                </div>`).join('');
-        });
-    }
-
     function renderHabits(defs, logs) {
         document.getElementById('habit-list').innerHTML = defs.map(d => {
             const dLogs = logs.filter(l => l.habit_id === d.id);
             return `<div class="habit-box">
+                <i data-feather="x" class="btn-del" onclick="deleteHabit('${d.id}')"></i>
                 <button class="btn-check" onclick="habitCheckIn('${d.id}')">打卡</button>
                 <strong>${d.name}</strong><br>
-                ${dLogs.map(l => `<span class="log-tag">已打卡 ${l.remark ? ': '+l.remark : ''}</span>`).join('')}
+                ${dLogs.length > 0 ? dLogs.map(l => `<span class="log-tag">已打卡${l.remark ? ': '+l.remark : ''}</span>`).join('') : '<span style="color:#ccc; font-size:11px;">今日未打卡</span>'}
             </div>`;
         }).join('');
+        feather.replace();
+    }
+
+    async function deleteHabit(id) {
+        if(confirm("确定要永久删除这个习惯吗？")){
+            await sb.from('habit_definitions').delete().eq('id', id);
+            loadAll();
+        }
     }
 
     async function habitCheckIn(id) {
-        const note = prompt("打卡备注 (如体重 70kg，不填直接确定):");
+        const note = prompt("打卡备注 (如体重，不填直接确定):");
         await sb.from('habit_logs').insert([{ habit_id: id, log_date: getTag(), remark: note || "" }]);
         loadAll();
     }
@@ -144,8 +138,8 @@
         loadAll();
     }
 
+    // --- 兼容原有逻辑 ---
     async function addTask(cat, val) {
-        if(!val) return;
         await sb.from('todos').insert([{ category: cat, content: val, time_frame: getTag() }]);
         document.getElementById(cat + '-input').value = '';
         loadAll();
@@ -160,14 +154,21 @@
         await sb.from('summaries').upsert({ category: cat, content: val, time_frame: getTag() }, { onConflict: 'category,time_frame' });
     }
 
+    function renderTodos(list) {
+        ['work', 'life'].forEach(cat => {
+            document.getElementById(`${cat}-todos`).innerHTML = list.filter(t => t.category === cat).map(t => `
+                <div class="todo-item">
+                    <i data-feather="${t.is_completed ? 'check-circle' : 'circle'}" style="cursor:pointer; color:${t.is_completed ? 'var(--blue)' : 'var(--border)'}" onclick="toggleTodo('${t.id}', ${t.is_completed})"></i>
+                    <span style="${t.is_completed ? 'text-decoration:line-through;color:gray' : ''}">${t.content}</span>
+                </div>`).join('');
+        });
+    }
+
     async function updateCharts(todos) {
-        // 生活环形图
         const lItems = todos.filter(t => t.category === 'life');
         const lDone = lItems.filter(t => t.is_completed).length;
         lifeChart.data.datasets[0].data = [lDone, Math.max(0, lItems.length - lDone) || 1];
         lifeChart.update();
-
-        // 工作折线图 (最近7天统计)
         const counts = [];
         for (let i = 6; i >= 0; i--) {
             const d = new Date(); d.setDate(d.getDate() - i);
@@ -179,30 +180,24 @@
     }
 
     function changeDate(step) {
-        if (currentFrame === 'day') viewDate.setDate(viewDate.getDate() + step);
-        else if (currentFrame === 'week') viewDate.setDate(viewDate.getDate() + step * 7);
-        else viewDate.setFullYear(viewDate.getFullYear() + step);
+        viewDate.setDate(viewDate.getDate() + step);
         loadAll();
     }
 
     function updateLabel() {
-        const y = viewDate.getFullYear(), m = viewDate.getMonth()+1, d = viewDate.getDate();
-        const label = document.getElementById('current-date-label');
-        if (currentFrame === 'day') label.innerText = `${y}年${m}月${d}日`;
-        else if (currentFrame === 'week') label.innerText = `${y}年 第 ${Math.ceil(d/7)} 周`;
-        else label.innerText = `${y} 年度概览`;
+        document.getElementById('current-date-label').innerText = `${viewDate.getFullYear()}年${viewDate.getMonth()+1}月${viewDate.getDate()}日`;
     }
 
     function switchFrame(f) {
         currentFrame = f; viewDate = new Date();
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.innerText.includes(f==='day'?'日':f==='week'?'周':'年')));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.innerText.includes(f==='day'?'日':'周')));
         loadAll();
     }
 
     window.onload = () => {
         workChart = new Chart(document.getElementById('workChart'), { type: 'line', data: { labels: ['6天前','5天前','4天前','3天前','前天','昨天','今天'], datasets: [{ data: [], borderColor: '#007AFF', tension: 0.4, fill: true, backgroundColor: 'rgba(0,122,255,0.05)' }] }, options: { maintainAspectRatio: false, plugins: { legend: false } } });
         lifeChart = new Chart(document.getElementById('lifeChart'), { type: 'doughnut', data: { datasets: [{ data: [0, 1], backgroundColor: ['#34C759', '#E5E5EA'] }] }, options: { maintainAspectRatio: false, cutout: '80%' } });
-        switchFrame('day');
+        loadAll();
     };
 </script>
 </body>
